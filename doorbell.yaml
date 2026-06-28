@@ -1,0 +1,235 @@
+esphome:
+  name: doorbell
+  friendly_name: Doorbell
+  on_boot:
+    - priority: -100
+      then:
+        - number.set:
+            id: led_brightness
+            value: !lambda return id(brightness) * 100;
+        - script.execute: update_led
+
+esp32:
+  board: esp32-h2-devkitm-1
+  variant: ESP32H2
+  framework:
+    type: esp-idf
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "*****"
+
+ota:
+  - platform: esphome
+    password: "*****"
+
+
+network:
+  enable_ipv6: true
+ 
+openthread:
+  tlv:   # insert your thread tlv here
+
+light:
+  - platform: esp32_rmt_led_strip
+    rgb_order: RGB
+    id: rgb_led
+    pin: GPIO8
+    num_leds: 1
+    chipset: WS2812
+    name: "RGB"
+    internal: true
+  
+  - platform: binary
+    name: "LED Red"
+    id: light_red
+    output: red_output
+    restore_mode: ALWAYS_OFF
+    internal: true
+
+  - platform: binary
+    name: "LED Green"
+    id: light_green
+    output: green_output
+    restore_mode: ALWAYS_OFF
+    internal: true
+
+  - platform: binary
+    name: "LED Blue"
+    id: light_blue
+    output: blue_output
+    restore_mode: ALWAYS_OFF
+    internal: true
+
+interval:
+  - interval: 1s
+    then:
+      - if:
+          condition:
+            api.connected:
+          then:
+            - if:
+                condition:
+                  light.is_on: light_red
+                then:
+                - light.turn_off: light_red
+            - if:
+                condition:
+                  light.is_off: light_green
+                then:
+                  - light.turn_on: light_green
+          else:
+            - if:
+                condition:
+                  light.is_on: light_green
+                then:
+                  - light.turn_off: light_green
+            - light.toggle: light_red
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO13
+      inverted: true
+      mode:
+        input: true
+        pullup: true
+    id: button1
+    name: "Button 1"
+    on_press:
+      then:
+        - light.turn_on: light_blue
+    on_release:
+      then:
+        - delay: 1s
+        - light.turn_off: light_blue
+  - platform: gpio
+    pin:
+      number: GPIO14
+      inverted: true
+      mode:
+        input: true
+        pullup: true
+    id: button2
+    name: "Button 2"
+    on_press:
+      then:
+        - light.turn_on: light_blue
+    on_release:
+      then:
+        - delay: 1s
+        - light.turn_off: light_blue
+
+text_sensor:
+  - platform: openthread_info
+    ip_address:
+      name: "Thread IP Address"
+      entity_category: DIAGNOSTIC
+    channel:
+      name: "Thread Channel"
+      entity_category: DIAGNOSTIC
+    role:
+      name: "Thread Device Role"
+      entity_category: DIAGNOSTIC
+    rloc16:
+      name: "Thread RLOC16"
+      entity_category: DIAGNOSTIC
+    ext_addr:
+      name: "Thread Extended Address"
+      entity_category: DIAGNOSTIC
+    eui64:
+      name: "Thread EUI64"
+      entity_category: DIAGNOSTIC
+    network_name:
+      name: "Thread Network Name"
+      entity_category: DIAGNOSTIC
+    pan_id:
+      name: "Thread PAN ID"
+      entity_category: DIAGNOSTIC
+    ext_pan_id:
+      name: "Thread Extended PAN ID"
+      entity_category: DIAGNOSTIC
+
+globals:
+  - id: red_val
+    type: int
+    restore_value: false
+    initial_value: "0"
+  - id: green_val
+    type: int
+    restore_value: false
+    initial_value: "0"
+  - id: blue_val
+    type: int
+    restore_value: false
+    initial_value: "0"
+  - id: brightness
+    type: float
+    restore_value: true
+    initial_value: "0.15"
+
+script:
+  - id: update_led
+    mode: queued
+    then:
+      - if:
+          condition:
+            light.is_off: rgb_led
+          then:
+            - light.turn_on: rgb_led
+      - light.addressable_set:
+          id: rgb_led
+          range_from: 0
+          range_to: 0
+          red: !lambda return id(brightness) * id(red_val);
+          green: !lambda return id(brightness) * id(green_val);
+          blue: !lambda return id(brightness) * id(blue_val);
+
+output:
+  - platform: template
+    id: red_output
+    type: binary
+    write_action:
+      - globals.set:
+          id: red_val
+          value: !lambda 'return state;'
+      - script.execute: update_led
+
+  - platform: template
+    id: green_output
+    type: binary
+    write_action:
+      - globals.set:
+          id: green_val
+          value: !lambda 'return state;'
+      - script.execute: update_led
+
+  - platform: template
+    id: blue_output
+    type: binary
+    write_action:
+      - globals.set:
+          id: blue_val
+          value: !lambda 'return state;'
+      - script.execute: update_led
+
+number:
+  - platform: template
+    name: LED Brightness
+    max_value: 100
+    min_value: 0
+    step: 5
+    id: led_brightness
+    icon: "mdi:brightness-percent"
+    entity_category: CONFIG
+    mode: SLIDER
+    set_action:
+      - globals.set:
+          id: brightness
+          value: !lambda return x / 100;
+      - script.execute: update_led
+    optimistic: true
